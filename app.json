@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "tick-mate",
+    "name": "Tick-Mate",
     "slug": "tick-mate",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "tickmate",
+    "scheme": "tick-mate",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -23,6 +23,9 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "extra": {
+      "jsonServerUrl": "http://localhost:3001"
+    },
     "plugins": [
       "expo-router",
       [
@@ -31,7 +34,8 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#ffffff",
+          "autoHide": false
         }
       ]
     ],
