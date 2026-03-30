@@ -1,0 +1,88 @@
+# FORGE Git Webhook Dispatcher
+# Fires on every push to main, formats commits into FORGE's JSON-RPC schema,
+# signs the payload with HMAC-SHA256, and POSTs to the FORGE webhook endpoint.
+#
+# Required GitHub secrets:
+#   FORGE_WEBHOOK_URL    — public Cloudflare tunnel URL, e.g. https://erp.tria.al
+#   FORGE_WEBHOOK_SECRET — must match forge.git_webhook_secret in Odoo Settings → FORGE
+#
+# The endpoint /forge/git/webhook expects JSON-RPC format + X-Hub-Signature-256 header.
+name: FORGE Webhook Dispatch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send push event to FORGE
+        run: |
+          set -euo pipefail
+
+          if [ -z "$FORGE_WEBHOOK_URL" ] || [ -z "$FORGE_WEBHOOK_SECRET" ]; then
+            echo "::warning::FORGE_WEBHOOK_URL or FORGE_WEBHOOK_SECRET not set — skipping dispatch"
+            exit 0
+          fi
+
+          TIMESTAMP=$(date +%s)
+
+          # Build JSON-RPC payload — Odoo type='jsonrpc' expects this envelope
+          PAYLOAD=$(python3 -c "
+          import json, sys, os
+
+          commits_raw = os.environ.get('COMMITS_JSON', '[]')
+          try:
+              commits = json.loads(commits_raw)
+          except Exception:
+              commits = []
+
+          # Normalise to FORGE schema: {message, id, author: {email}}
+          forge_commits = []
+          for c in commits:
+              forge_commits.append({
+                  'id': c.get('id', ''),
+                  'message': c.get('message', ''),
+                  'author': {'email': c.get('author', {}).get('email', '')},
+              })
+
+          payload = {
+              'jsonrpc': '2.0',
+              'method': 'call',
+              'id': 1,
+              'params': {
+                  'commits': forge_commits,
+                  'timestamp': int(os.environ['TIMESTAMP']),
+              }
+          }
+          print(json.dumps(payload, separators=(',', ':')))
+          " )
+
+          SIGNATURE="sha256=$(echo -n "$PAYLOAD" | \
+            openssl dgst -sha256 -hmac "$FORGE_WEBHOOK_SECRET" | \
+            awk '{print $NF}')"
+
+          HTTP_CODE=$(curl -s -o /tmp/forge_webhook_resp.txt -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: $SIGNATURE" \
+            --data-raw "$PAYLOAD" \
+            --max-time 15 \
+            "${FORGE_WEBHOOK_URL}/forge/git/webhook")
+
+          echo "FORGE webhook response (HTTP $HTTP_CODE):"
+          cat /tmp/forge_webhook_resp.txt
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::FORGE webhook returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+        env:
+          FORGE_WEBHOOK_URL: ${{ secrets.FORGE_WEBHOOK_URL }}
+          FORGE_WEBHOOK_SECRET: ${{ secrets.FORGE_WEBHOOK_SECRET }}
+          COMMITS_JSON: ${{ toJson(github.event.commits) }}
+          TIMESTAMP: ${{ github.event.repository.pushed_at }}
