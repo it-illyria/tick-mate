@@ -7,6 +7,7 @@
 #   FORGE_WEBHOOK_SECRET — must match forge.git_webhook_secret in Odoo Settings → FORGE
 #
 # The endpoint /forge/git/webhook expects JSON-RPC format + X-Hub-Signature-256 header.
+
 name: FORGE Webhook Dispatch
 
 on:
